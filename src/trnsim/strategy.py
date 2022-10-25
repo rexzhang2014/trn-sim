@@ -1,3 +1,4 @@
+from cgi import print_exception
 from .base import *
 
 class BuyEqualAmountTopKAndHoldTDay(Strategy) :
@@ -10,8 +11,12 @@ class BuyEqualAmountTopKAndHoldTDay(Strategy) :
         self.hold_days = hold_days
         
     def run(self, *args, **kwargs) :
+        ts = self.timestep
+        key = self.key
+        price = self.price
+
         for dt in self.available_dates[::self.hold_days]  + self.available_dates[-1:]:
-            snapshot = self.watching_list[self.watching_list['date'] == dt] 
+            snapshot = self.watching_list[self.watching_list[ts] == dt] 
             selected = snapshot.sort_values(self.ranking_metric, ascending=False).head(self.topk)
             
             # 0. at last day, assume we clear the holdings
@@ -19,7 +24,7 @@ class BuyEqualAmountTopKAndHoldTDay(Strategy) :
                 tosell = set(self.holdings.current.keys())
                 for s in tosell :
                     try :
-                        p = snapshot.loc[snapshot['symbol']==s, 'close'].tolist()[0]
+                        p = snapshot.loc[snapshot[key]==s, price].tolist()[0]
                         sh = self.holdings.current[s]
                         self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
                         self.holdings.sell(s, dt, sh, p)
@@ -29,12 +34,12 @@ class BuyEqualAmountTopKAndHoldTDay(Strategy) :
                 break
                 
             # 1. sell holdings that are out of topk
-            tosell = set(self.holdings.current.keys()) - set(selected['symbol'])
+            tosell = set(self.holdings.current.keys()) - set(selected[key])
 #             self.verboseprint(selected)
             for s in tosell :
                 try :
 
-                    p = snapshot.loc[snapshot['symbol']==s, 'close'].tolist()[0]
+                    p = snapshot.loc[snapshot[key]==s, price].tolist()[0]
                     sh = self.holdings.current[s]
                     self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
                     self.holdings.sell(s, dt, sh, p)
@@ -43,11 +48,11 @@ class BuyEqualAmountTopKAndHoldTDay(Strategy) :
                 
             # holding.buy('SH600000', '2020-05-01', 100, 5,)
             # 2. buy topk on that day with today's close price (assume we are able to do this in next day, before next closing.)
-            tobuy = set(selected['symbol']) - set(self.holdings.current.keys())
+            tobuy = set(selected[key]) - set(self.holdings.current.keys())
             
             for s in tobuy :
                 try :
-                    p = snapshot.loc[snapshot['symbol']==s, 'close'].tolist()[0]
+                    p = snapshot.loc[snapshot[key]==s, price].tolist()[0]
                     sh = self.spare_amount // (p*100)
                     
                     self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
@@ -72,4 +77,3 @@ class BuyEqualAmountTopKAndHoldTDay(Strategy) :
             
         }
         return output
-                        

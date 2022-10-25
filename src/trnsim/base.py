@@ -265,24 +265,43 @@ class Strategy :
         else :
             return s
         
-    def __init__(self, watching_list, begin, end, funding = -1, verbose=0) :
+    def __init__(self, watching_list, begin, end, key='symbol', timestep='date', price='close', funding = -1, verbose=0) :
+        '''
+        Make up strategy instance by a market dataset and predictive score/signal. A timestep column must be specified, the column name is set as 'date' by default. 
         
+        Parameters
+        ----------
+        watching_list : DataFrame
+            Market history data set. A timestep column must be specified, the column name is set as 'date' by default. This column in the dataset will be converted as datetime type.
+        begin : datetime
+            Begin date of your watching window.
+        end : datetime
+            End date of your watching window.
+        key : str
+            The column name in watching_list dataset referring key of the stock.
+        timestep : str
+            The column name in watching_list dataset referring time step of the watching period. It can be a datetime dtype column or a date str formatted as '%Y-%m-%d' and will be converted to datetime automatically. 
+        price : str
+            The column name in watching_list dataset referring the price. GL calculation are based on this column's value. 
+        '''
         # environment configuration
         self.watching_list = watching_list
-        self.watching_list['date'] = self.watching_list['date'].apply(lambda x: self._force_date(x))
+        self.watching_list[timestep] = self.watching_list[timestep].apply(lambda x: self._force_date(x))
         
-        self.begin = begin if begin else self.watching_list['date'].min()
-        self.end   = end if end else self.watching_list['date'].max()
+        self.begin = begin if begin else self.watching_list[timestep].min()
+        self.end   = end if end else self.watching_list[timestep].max()
         
         self.available_dates = sorted(list(set(self.watching_list.loc[
-            (self.watching_list['date']>=self.begin) & (self.watching_list['date']<=self.end),
-            'date'
+            (self.watching_list[timestep]>=self.begin) & (self.watching_list[timestep]<=self.end),
+            timestep
         ])))
         
-        self.watching_list = self.watching_list[self.watching_list['date'].isin(self.available_dates)]
+        self.watching_list = self.watching_list[self.watching_list[timestep].isin(self.available_dates)]
         
         self.funding = funding # -1 means infinite funding
-        
+        self.timestep = timestep
+        self.key = key
+        self.price = price
 
         # transaction-wise configuation
         
@@ -299,4 +318,18 @@ class Strategy :
     def run(self, *args, **kwargs) :
         # override in child class
         pass 
-      
+
+class Criterion() :
+    '''
+    Strategy criterion. 
+    =========================================================================================
+    When the criterion is satisfied, certain actions will be taken. 
+    '''
+    def __init__(self) :
+        '''
+        Initialization.
+
+        Attributes
+        ----------
+        '''
+        pass    
