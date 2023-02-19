@@ -2,23 +2,14 @@ import pandas as pd
 from trnsim.strategy import *
 
 if __name__ == '__main__' :
-    # data = pd.read_csv('./data/sim_cyb_L20D50G50.csv', sep=',')
-    data = pd.read_csv('./data/strategydata.csv', sep='|')
-
-    hold_days=5
+    data = pd.read_csv('./data/simulation_combine.csv', sep=',')
+    hold_days=1
     topk=1
-    spare_amount=10000
+    spare_amount=10000000
 
     output1 = BuyEqualAmountTopKAndHoldTDay(
-        watching_list=data, begin='2020-10-01', end='2020-11-18', ranking_metric='score', topk=topk, verbose=1, spare_amount=spare_amount,
+        watching_list=data, begin='2022-12-01', end='2022-12-31', ranking_metric='score_INC', topk=topk, verbose=1, spare_amount=spare_amount,
         hold_days=hold_days
     ).run()
 
     print(output1)
-
-    # output2 = BuyEqualAmountTopKAndHoldTDay(
-    #     watching_list=data, begin='2020-06-01', end='2020-06-30', ranking_metric='score', topk=topk, verbose=0, spare_amount=spare_amount,
-    #     hold_days=hold_days
-    # ).run()
-
-    # print(output2)

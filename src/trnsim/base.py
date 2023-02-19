@@ -315,9 +315,97 @@ class Strategy :
         elif self.verbose ==0 :
             pass
     
+    def _select_snapshot(self, *args, **kwargs) :
+        dt= args[0]
+        selected = self.watching_list[self.watching_list[self.timestep] == dt] 
+        return selected
+
+    def _select_champion(self, snapshot, *args, **kwargs) :
+        return snapshot.head(10)
+        
+    def _sell_all(self, snapshot, dt, *args, **kwargs) :
+        tosell = set(self.holdings.current.keys())
+        for s in tosell :
+            try :
+                p = snapshot.loc[snapshot[self.key]==s, self.price].tolist()[0]
+                sh = self.holdings.current[s]
+                self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
+                self.holdings.sell(s, dt, sh, p)
+            except Exception as e:
+                print(repr(e))
+
+    def _sell(self, snapshot, champion, dt, *args, **kwargs) :
+        # Define the stocks in holding but not in champion is possible to be sold.
+        tosell = set(self.holdings.current.keys()) - set(champion[self.key])
+        for s in tosell :
+            try :
+                p = snapshot.loc[snapshot[self.key]==s, self.price].tolist()[0]
+                sh = self.holdings.current[s]
+                self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
+                self.holdings.sell(s, dt, sh, p)
+            except Exception as e:
+                print(repr(e))
+
+    def _buy(self, snapshot, champion, dt, *args, **kwargs) :
+        # Define the stocks in champion is possible to be bought.
+        tobuy = set(champion[self.key]) - set(self.holdings.current.keys())
+        for s in tobuy :
+            try :
+                p = snapshot.loc[snapshot[self.key]==s, self.price].tolist()[0]
+                sh = 1
+                
+                self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
+                
+                self.holdings.buy(s, dt, sh, p)
+            except Exception as e:
+                print(repr(e))
+
+    def _calc_perf(self) :
+        output = {
+            'buy_amount' : self.holdings.buy_amount(self.begin, self.end), 
+            'sell_amount' : self.holdings.sell_amount(self.begin, self.end), 
+            'hold_amount' : self.holdings.holding_amount(self.begin, self.end), 
+            'current' : self.holdings.current, 
+            'trading_gain' : self.holdings.trading_gain(self.begin, self.end), 
+            'gain' : self.holdings.gain(self.end), 
+            'txn_cnt' : self.holdings.txn_cnt(self.begin, self.end),   
+        }
+        return output
+
+    def _available_dates(self) :
+        return self.available_dates
+
     def run(self, *args, **kwargs) :
-        # override in child class
-        pass 
+
+        # For each dt(assuming the timestep is in date manner), we evaluate :
+        # 1. whether the current holding is to be sold 
+        # 2. whether there are stocks not in the holding to be bought
+        # 0. Clear the position if dt is the last date in simulation time window, to simplify performance calculation. 
+        for dt in self._available_dates() :
+
+            # Pick the snapshot fulfilling conditions for next calculation, the simplest one is to take current_dt as the only input.
+            snapshot = self._select_snapshot(dt)
+            # Select the candidate stocks pool from the ranking_metrics/indicators in the simulated data.
+            champion = self._select_champion(snapshot)
+            
+            # 0. at last day, assume we clear the holdings
+            if dt == self.available_dates[-1] : 
+                self._sell_all(snapshot, dt)
+                break
+                
+            # 1. sell holdings that are out of topk
+            self._sell(snapshot, champion, dt)
+
+            # 2. buy topk on that day with today's close price (assume we are able to do this in next day, before next closing.)
+            self._buy(snapshot, champion, dt)
+
+            self.verboseprint(self.holdings.current)
+                    
+            self.verboseprint('trading gain: {} , gain: {}'.format(self.holdings.trading_gain(self.begin, dt), self.holdings.gain(dt)))
+            
+        output = self._calc_perf()
+        
+        return output
 
 class Criterion() :
     '''
