@@ -109,6 +109,22 @@ class StockHolding :
         
         return dt.shape[0]
     
+    def txn_cost(self, begin, end, unit_cost=1) :
+        '''
+        Calculate number of transactions happened, including both buy and sell. 
+        
+        Parameters
+        ----------
+        begin : datetime
+            Begin date of your watching window.
+        end : datetime
+            End date of your watching window.
+        '''
+        begin, end = self._force_date(begin), self._force_date(end)
+        dt = self.history.loc[(self.history['date']>=begin) & (self.history['date']<=end) & (self.history['direction']==1), ['price', 'shares']]
+        
+        return dt.shape[0] * unit_cost
+
     def buy_amount(self, begin, end) :
         '''
         Calculate the buy amount happened in your holding history. Equivalently, the invested money between begin and end. 
@@ -234,13 +250,47 @@ class StockHolding :
         sell = self.sell_amount(begin, end)
         hold = self.holding_amount(begin, end) # 当前持仓本金
         gain = sell - buy + hold # 期间损益 = 交易损益 + 当前持仓本金 
-        gain_ratio = (sell - buy + hold)/ (buy + hold) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
+        gain_ratio = (sell - buy + hold)/ (buy + hold + 0.0001) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
         
 #         gain = sell - buy + hold - hold_before # 期间损益 = 交易损益 + 持仓损益 =(期间卖出 - 期间买入)+ （期末余额 - 上期末余额）
 #         gain_ratio = (sell - buy + hold - hold_before)/ (buy + hold_before) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
         return gain, gain_ratio
 
+#     def win(self, end) : # 建仓以来损益
+#         '''
+#         Calculate GL since first day. 
+#         Highly recommend to setup the end date as when the holding is cleared. 
+#         Otherwise the holding GL is not be included because we only calculate the vested value of your holding.
+        
+#         On the other hand, your holding value changes along the market, only the trading gain is the real funding flow to your cach account.
+        
+#         Parameters
+#         ---------- 
+#         end : datetime
+#             End date of your watching window.
+#         '''
+#         end = self._force_date(end)
+        
+#         begin = self.history['date'].min()
+        
+# # #         print(type(first_day))
+# #         hold_before = self.holding_amount(first_day,begin - timedelta(days=1))
+#         def avg_buy_price(x) :
 
+#         self.history.query('direction==1').groupby(
+#             'symbol'
+#         ).agg([        ])
+
+
+#         buy = self.buy_amount(begin, end)
+#         sell = self.sell_amount(begin, end)
+#         hold = self.holding_amount(begin, end) # 当前持仓本金
+#         gain = sell - buy + hold # 期间损益 = 交易损益 + 当前持仓本金 
+#         gain_ratio = (sell - buy + hold)/ (buy + hold + 0.0001) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
+        
+# #         gain = sell - buy + hold - hold_before # 期间损益 = 交易损益 + 持仓损益 =(期间卖出 - 期间买入)+ （期末余额 - 上期末余额）
+# #         gain_ratio = (sell - buy + hold - hold_before)/ (buy + hold_before) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
+#         return gain, gain_ratio
 
 
 class Strategy :
@@ -327,7 +377,10 @@ class Strategy :
         tosell = set(self.holdings.current.keys())
         for s in tosell :
             try :
-                p = snapshot.loc[snapshot[self.key]==s, self.price].tolist()[0]
+                p = snapshot.loc[
+                    (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
+                    self.price
+                ].tolist()[0]
                 sh = self.holdings.current[s]
                 self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
                 self.holdings.sell(s, dt, sh, p)
@@ -339,7 +392,10 @@ class Strategy :
         tosell = set(self.holdings.current.keys()) - set(champion[self.key])
         for s in tosell :
             try :
-                p = snapshot.loc[snapshot[self.key]==s, self.price].tolist()[0]
+                p = snapshot.loc[
+                    (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
+                    self.price
+                ].tolist()[0]
                 sh = self.holdings.current[s]
                 self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
                 self.holdings.sell(s, dt, sh, p)
@@ -351,14 +407,18 @@ class Strategy :
         tobuy = set(champion[self.key]) - set(self.holdings.current.keys())
         for s in tobuy :
             try :
-                p = snapshot.loc[snapshot[self.key]==s, self.price].tolist()[0]
-                sh = 1
+                p = snapshot.loc[
+                    (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
+                    self.price
+                ].tolist()[0]
+                sh = self.spare_amount // (p*100)
                 
                 self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
                 
                 self.holdings.buy(s, dt, sh, p)
             except Exception as e:
                 print(repr(e))
+
 
     def _calc_perf(self) :
         output = {
