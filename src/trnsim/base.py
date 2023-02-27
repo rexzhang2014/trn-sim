@@ -11,7 +11,7 @@ class StockHolding :
     The GL is on basis of cash, if the funding flows to cash is less than that flows to stock, it is a loss and vice vesa. 
     The Holding Value is also on basis of cash, only the booking value is calculated, it equals to the value from cash to stock when you buy it.
     '''
-    def __init__(self) :
+    def __init__(self, *args, **kwargs) :
         '''
         Initialization.
 
@@ -29,7 +29,8 @@ class StockHolding :
         '''
         self.current = {}
         self.history = pd.DataFrame(columns=['symbol', 'date', 'shares', 'price', 'direction'])
-        
+
+
     def _force_date(self, s) :
         '''
         force convert input date string into python datetime datatype
@@ -256,41 +257,6 @@ class StockHolding :
 #         gain_ratio = (sell - buy + hold - hold_before)/ (buy + hold_before) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
         return gain, gain_ratio
 
-#     def win(self, end) : # 建仓以来损益
-#         '''
-#         Calculate GL since first day. 
-#         Highly recommend to setup the end date as when the holding is cleared. 
-#         Otherwise the holding GL is not be included because we only calculate the vested value of your holding.
-        
-#         On the other hand, your holding value changes along the market, only the trading gain is the real funding flow to your cach account.
-        
-#         Parameters
-#         ---------- 
-#         end : datetime
-#             End date of your watching window.
-#         '''
-#         end = self._force_date(end)
-        
-#         begin = self.history['date'].min()
-        
-# # #         print(type(first_day))
-# #         hold_before = self.holding_amount(first_day,begin - timedelta(days=1))
-#         def avg_buy_price(x) :
-
-#         self.history.query('direction==1').groupby(
-#             'symbol'
-#         ).agg([        ])
-
-
-#         buy = self.buy_amount(begin, end)
-#         sell = self.sell_amount(begin, end)
-#         hold = self.holding_amount(begin, end) # 当前持仓本金
-#         gain = sell - buy + hold # 期间损益 = 交易损益 + 当前持仓本金 
-#         gain_ratio = (sell - buy + hold)/ (buy + hold + 0.0001) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
-        
-# #         gain = sell - buy + hold - hold_before # 期间损益 = 交易损益 + 持仓损益 =(期间卖出 - 期间买入)+ （期末余额 - 上期末余额）
-# #         gain_ratio = (sell - buy + hold - hold_before)/ (buy + hold_before) # 期间收益率 = 期间损益 / (期间买入 + 期间余额)
-#         return gain, gain_ratio
 
 
 class Strategy :
@@ -315,7 +281,7 @@ class Strategy :
         else :
             return s
         
-    def __init__(self, watching_list, begin, end, key='symbol', timestep='date', price='close', funding = -1, verbose=0) :
+    def __init__(self, watching_list, begin, end, key='symbol', timestep='date', price='close', funding = -1, max_portion=0.5, verbose=0) :
         '''
         Make up strategy instance by a market dataset and predictive score/signal. A timestep column must be specified, the column name is set as 'date' by default. 
         
@@ -348,17 +314,23 @@ class Strategy :
         
         self.watching_list = self.watching_list[self.watching_list[timestep].isin(self.available_dates)]
         
-        self.funding = funding # -1 means infinite funding
+        self.initial_funding = funding # keep intial funding value. -1 means infinite funding
+        self.funding = funding # change the funding if action is taken. 
         self.timestep = timestep
         self.key = key
         self.price = price
 
         # transaction-wise configuation
-        
+        self.max_portion = max_portion
+
         # Object of stock holdings
         self.holdings = StockHolding()
         self.verbose = verbose
-    
+
+        # Performance attributes
+        self.net_values = []
+        self.stats = []
+
     def verboseprint(self, s) :
         if self.verbose == 1 :
             print(s)
@@ -387,6 +359,9 @@ class Strategy :
             except Exception as e:
                 print(repr(e))
 
+        # update current funding
+        self.funding += self.holdings.sell_amount(dt, dt)
+
     def _sell(self, snapshot, champion, dt, *args, **kwargs) :
         # Define the stocks in holding but not in champion is possible to be sold.
         tosell = set(self.holdings.current.keys()) - set(champion[self.key])
@@ -396,36 +371,59 @@ class Strategy :
                     (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
                     self.price
                 ].tolist()[0]
+
+                # get current shares
                 sh = self.holdings.current[s]
                 self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
+                # take sell action and update holding history
                 self.holdings.sell(s, dt, sh, p)
+
             except Exception as e:
                 print(repr(e))
+
+        # update current funding
+        self.funding += self.holdings.sell_amount(dt, dt)
 
     def _buy(self, snapshot, champion, dt, *args, **kwargs) :
         # Define the stocks in champion is possible to be bought.
         tobuy = set(champion[self.key]) - set(self.holdings.current.keys())
+
+        portion = kwargs.get('portion', len(tobuy))
+        portion = 1 / portion * self.max_portion if portion > 1 else self.max_portion
         for s in tobuy :
             try :
                 p = snapshot.loc[
                     (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
                     self.price
                 ].tolist()[0]
-                sh = self.spare_amount // (p*100)
-                
-                self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
-                
-                self.holdings.buy(s, dt, sh, p)
+
+                # calculate how many shares to buy
+                sh = portion * self.funding // (p*100) * 100
+                if sh > 0 :
+                    # take buy action and update holding history
+                    self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
+                    self.holdings.buy(s, dt, sh, p)
+                else :
+                    self.verboseprint('Warning: Insufficient Fund:{}'.format(self.funding))
+    
             except Exception as e:
                 print(repr(e))
+
+        # update current funding
+        buy_amt = self.holdings.buy_amount(dt, dt) 
+        self.funding -= self.holdings.buy_amount(dt, dt)
 
 
     def _calc_perf(self) :
         output = {
+            'initial_funding': self.initial_funding,
+            'current_funding': self.funding,
+            'current_net_value': self.stats[-1]['net_value'],
+            'net_value_gain': self.stats[-1]['net_value'] -1,
             'buy_amount' : self.holdings.buy_amount(self.begin, self.end), 
             'sell_amount' : self.holdings.sell_amount(self.begin, self.end), 
             'hold_amount' : self.holdings.holding_amount(self.begin, self.end), 
-            'current' : self.holdings.current, 
+            'current_holding' : self.holdings.current, 
             'trading_gain' : self.holdings.trading_gain(self.begin, self.end), 
             'gain' : self.holdings.gain(self.end), 
             'txn_cnt' : self.holdings.txn_cnt(self.begin, self.end),   
@@ -434,6 +432,16 @@ class Strategy :
 
     def _available_dates(self) :
         return self.available_dates
+
+    def net_value(self, dt, *args, **kwargs) :
+        fund = self.funding
+        holding_value = 0
+        snaps = self.watching_list[self.watching_list[self.timestep]==dt]
+
+        for stk, shr in self.holdings.current.items() :
+            p = snaps.loc[snaps[self.key]==stk, self.price].values[0]
+            holding_value  += p * shr
+        return round((fund + holding_value) / self.initial_funding, 6)
 
     def run(self, *args, **kwargs) :
 
@@ -463,6 +471,20 @@ class Strategy :
                     
             self.verboseprint('trading gain: {} , gain: {}'.format(self.holdings.trading_gain(self.begin, dt), self.holdings.gain(dt)))
             
+            # self.net_values.append({
+            #     'date' : dt,
+            #     'net_value' : self.net_value(dt),
+            # })
+
+            self.stats.append({
+                'date' : dt, 
+                'net_value' : self.net_value(dt),
+                'txn_cnt': self.holdings.txn_cnt(dt, dt),
+                'current_funding' : self.funding,
+            })
+            # self.verboseprint('current funding:{}, net_value:{}'.format(self.funding, self.net_values[-1]['net_value']))
+            print('{}: current funding:{}, net_value:{}'.format(dt, self.funding, self.stats[-1]['net_value']))
+
         output = self._calc_perf()
         
         return output

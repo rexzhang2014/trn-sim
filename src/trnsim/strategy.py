@@ -98,14 +98,14 @@ class BuyEqualAmountHighScoreHoldTDay(Strategy) :
 
 
 class BuyHighSellLow(Strategy) :
-    def __init__(self, ranking_metric, high_cut=0.9, low_cut=0.1, spare_amount=200000, 
+    def __init__(self, ranking_metric, high_cut=0.9, low_cut=0.1, 
         hold_days=5, look_back_days=0, n_days=3, *args, **kwargs) :
         Strategy.__init__(self, *args, **kwargs)
         # selection-wise configuration
         self.ranking_metric = ranking_metric
         self.high_cut = high_cut
         self.low_cut = low_cut
-        self.spare_amount = spare_amount 
+        # self.spare_amount = spare_amount 
         self.hold_days = hold_days
         self.look_back_days = look_back_days
         self.n_days = n_days
