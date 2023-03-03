@@ -346,54 +346,62 @@ class Strategy :
         return snapshot.head(10)
         
     def _sell_all(self, snapshot, dt, *args, **kwargs) :
-        tosell = set(self.holdings.current.keys())
+        tosell = set(self.holdings.current.keys())        
+        dates = self.available_dates
+        p_dt  = dates[dates.index(dt) + 1]
+
         for s in tosell :
             try :
                 p = snapshot.loc[
-                    (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
+                    (snapshot[self.key]==s) & (snapshot[self.timestep]==p_dt), 
                     self.price
                 ].tolist()[0]
                 sh = self.holdings.current[s]
-                self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
-                self.holdings.sell(s, dt, sh, p)
+                self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(p_dt)[:10], sh, s, p))
+                self.holdings.sell(s, p_dt, sh, p)
             except Exception as e:
                 print(repr(e))
 
         # update current funding
-        self.funding += self.holdings.sell_amount(dt, dt)
+        self.funding += self.holdings.sell_amount(p_dt, p_dt)
 
     def _sell(self, snapshot, champion, dt, *args, **kwargs) :
         # Define the stocks in holding but not in champion is possible to be sold.
         tosell = set(self.holdings.current.keys()) - set(champion[self.key])
+        dates = self.available_dates
+        p_dt  = dates[dates.index(dt) + 1]
+
         for s in tosell :
             try :
                 p = snapshot.loc[
-                    (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
+                    (snapshot[self.key]==s) & (snapshot[self.timestep]==p_dt), 
                     self.price
                 ].tolist()[0]
 
                 # get current shares
                 sh = self.holdings.current[s]
-                self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
+                self.verboseprint('{} sell {} shares of stock {} at price {}'.format(str(p_dt)[:10], sh, s, p))
                 # take sell action and update holding history
-                self.holdings.sell(s, dt, sh, p)
+                self.holdings.sell(s, p_dt, sh, p)
 
             except Exception as e:
                 print(repr(e))
 
         # update current funding
-        self.funding += self.holdings.sell_amount(dt, dt)
+        self.funding += self.holdings.sell_amount(p_dt, p_dt)
 
     def _buy(self, snapshot, champion, dt, *args, **kwargs) :
         # Define the stocks in champion is possible to be bought.
         tobuy = set(champion[self.key]) - set(self.holdings.current.keys())
-
+        dates = self.available_dates
+        p_dt  = dates[dates.index(dt) + 1]
+        
         portion = kwargs.get('portion', len(tobuy))
         portion = 1 / portion * self.max_portion if portion > 1 else self.max_portion
         for s in tobuy :
             try :
                 p = snapshot.loc[
-                    (snapshot[self.key]==s) & (snapshot[self.timestep]==dt), 
+                    (snapshot[self.key]==s) & (snapshot[self.timestep]==p_dt), 
                     self.price
                 ].tolist()[0]
 
@@ -401,8 +409,8 @@ class Strategy :
                 sh = portion * self.funding // (p*100) * 100
                 if sh > 0 :
                     # take buy action and update holding history
-                    self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(dt)[:10], sh, s, p))
-                    self.holdings.buy(s, dt, sh, p)
+                    self.verboseprint('{} buy {} shares of stock {} at price {}'.format(str(p_dt)[:10], sh, s, p))
+                    self.holdings.buy(s, p_dt, sh, p)
                 else :
                     self.verboseprint('Warning: Insufficient Fund:{}'.format(self.funding))
     
@@ -410,8 +418,8 @@ class Strategy :
                 print(repr(e))
 
         # update current funding
-        buy_amt = self.holdings.buy_amount(dt, dt) 
-        self.funding -= self.holdings.buy_amount(dt, dt)
+        buy_amt = self.holdings.buy_amount(p_dt, p_dt) 
+        self.funding -= buy_amt
 
 
     def _calc_perf(self) :

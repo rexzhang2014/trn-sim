@@ -112,13 +112,16 @@ class BuyHighSellLow(Strategy) :
 
     def _available_dates(self) :
         return self.available_dates[::self.hold_days]  + self.available_dates[-1:]
-    
+
+    def _sell_all(self, snapshot, dt, *args, **kwargs):
+        return 
+
     def _select_snapshot(self, *args, **kwargs) :
         dt= args[0]
         
         idx = self.available_dates.index(dt)
         start = idx - self.look_back_days if idx >= self.look_back_days else 0
-        end = idx +1
+        end = idx +1 +1 # we calc the score after market closing, so we can only place any order in the next day.
         dates = self.available_dates[start:end]
 
         snaps = self.watching_list[self.watching_list[self.timestep].isin(dates)]
